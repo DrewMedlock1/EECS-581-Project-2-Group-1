@@ -96,10 +96,7 @@ class Tile:
 
 # Create the board
 
-board = [
-    [Tile(x, y) for x in range(boardSize)]
-    for y in range(boardSize)
-]
+board = [ [Tile(x, y) for x in range(boardSize)] for y in range(boardSize) ]
 
 # Sets bombs on the board
 # iterates through board
@@ -111,7 +108,11 @@ board = [
 # Added first click is always safe - Joseph
 def set_bombs(board, safe_tile):
     candidates = [tile for row in board for tile in row if tile is not safe_tile]
-
+    # Drew Medlock - Remove neighbors from the first selection to give an easier start
+    for row in range(safe_tile.x - 1, safe_tile.x + 2):
+        for col in range(safe_tile.y - 1, safe_tile.y + 2):
+            if 0 <= row < boardSize and 0 <= col < boardSize and (col, row) != (safe_tile.x, safe_tile.y):
+                candidates.remove(board[row][col])
     for tile in random.sample(candidates, max_num_of_bombs):
         tile.has_bomb = True
         print("placed bomb at ", tile.x, " ", tile.y)
