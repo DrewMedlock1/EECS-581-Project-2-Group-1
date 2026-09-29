@@ -1,4 +1,5 @@
 # Names: Parker Albright, Aidan Atwood, Joseph Wen H Tan, Ever Armenta, Atique Ahanaf Danial, Viren Chowdary Padarthi
+# Project 2 Authors: Drew Medlock
 # Course: EECS 581: Software Engineering II
 # Project: Minesweeper
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
