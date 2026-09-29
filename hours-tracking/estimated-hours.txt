@@ -1,0 +1,8 @@
+From Project 1 our estimated hours were accurate using the .75 hours per effort point. Because of this we will continue
+to estimate our hours based on planning poker for the difficulty and applying this efficiency factor.
+
+From planning poker:
+
+
+
+Meetings:
