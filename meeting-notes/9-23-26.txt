@@ -1,7 +1,7 @@
 Meeting 1 - 9/9/2026
 Location: Eaton 3001
 Objective: Meet with Huy; Showcase and discuss last project; Create fork of Group 2 Project 1
-Atttendence: Luke, Alex, Carter, Blake, Drew, Kyle, Kyler
+Attendance: Luke, Alex, Carter, Blake, Drew, Kyle, Kyler
 Details: Showcased our working Project 1 to Huy, then created a fork of Group 2's project and discussed the added feature.
 
 Fixes:
