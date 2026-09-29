@@ -251,7 +251,10 @@ def is_valid_index(x, y) -> bool:
 # Draw the board for the user
 
 # Easy bot that will click on not flagged, and not revealed tiles - Drew Medlock
-def toggle_easy_bot():
+def toggle_bot():
+    """
+    This toggles a global AI on vs AI off state to set the timer for 1 second AI moves
+    """
     global AI_on
     if AI_on:
         AI_on = False
@@ -260,14 +263,23 @@ def toggle_easy_bot():
         AI_on = True
 
 def set_bot_type(bot_type):
+    """
+    This sets a global value for the bot type that is currently being used in the AI action
+    """
     global AI_type
     AI_type = bot_type
 
 def do_AI_action():
+    """
+    Dispatcher function based on assigned AI type to correct level of AI
+    """
     if AI_type == 'easy':
         easy_AI_action()
 
 def easy_AI_action():
+    """
+    Randomly chooses a tile to attempt to reveal it, if it is already revealed or is flagged it picks another
+    """
     global game_over, bombs_placed
     revealed_tile = False
     while not revealed_tile:
@@ -293,8 +305,6 @@ def easy_AI_action():
                 if check_win():
                     flag_bombs()
                     game_won = True
-        elif tile.state == -2:
-            continue
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -395,11 +405,12 @@ while True:
                             if tile.has_bomb:
                                 tile.state = -2
             elif event.key == pygame.K_e:
+                # Pressing 'e' toggles the easy mode bot on and off
                 if AI_on:
-                    toggle_easy_bot()
+                    toggle_bot()
                     pygame.time.set_timer(AI_event, 0)
                 else:
-                    toggle_easy_bot()
+                    toggle_bot()
                     set_bot_type('easy')
                     pygame.time.set_timer(AI_event, 1000)
 
