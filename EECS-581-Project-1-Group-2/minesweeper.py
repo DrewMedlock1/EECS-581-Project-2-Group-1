@@ -5,6 +5,15 @@
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
 #              is to clear all safe spaces without tripping a bomb. A space will become blank on click or
 #              show a number indicating how many bombs are touching the space.
+# Changes made to Original:
+#       Fixes:
+#
+#       Features:
+#           Resize the game window - Drew Medlock
+#               - Used Pygame documentation: https://www.pygame.org/docs/ref/display.html
+#           Guarantee 0 mines around first click - Drew Medlock
+#       AI Modes added:
+#           Easy mode - Drew Medlock
 # Date: 9/19/2026
 
 import pygame
