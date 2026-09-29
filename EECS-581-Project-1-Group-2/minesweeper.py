@@ -32,7 +32,8 @@ boardHeight = boardSize * tileSize
 windowWidth = boardX + boardWidth + 10
 windowHeight = boardY + boardHeight + 30
 
-screen = pygame.display.set_mode((windowWidth, windowHeight))
+screen = pygame.display.set_mode((windowWidth, windowHeight), pygame.SCALED | pygame.RESIZABLE)
+                                                                  # Set the window to be both scalable and resizeable
 pygame.display.set_caption("Minesweeper")
 
 clock = pygame.time.Clock()
@@ -42,15 +43,16 @@ clock = pygame.time.Clock()
 white = (255, 255, 255)
 black = (0, 0, 0)
 
-# Font used for text in the window
-
-font = pygame.font.Font(None, 20)
 
 # Save the images we'll reference for graphics
 
 ## Directory paths
 BASE_DIR = Path(__file__).parent
 ASSETS_DIR = BASE_DIR / "assets"
+
+# Font used for text in the window
+font = pygame.font.Font(ASSETS_DIR / "Minesweeper.ttf", 10) # Update to use a minesweeper font that looks better at
+                                                                 # different scales - Drew Medlock
 
 coveredTile = pygame.image.load(ASSETS_DIR / "block.png")
 selectedTile = pygame.image.load(ASSETS_DIR / "selblock.png")
@@ -264,7 +266,6 @@ def drawBoard(mouseTile):
                 boardY // 2
             )
         )
-
         screen.blit(label, labelRect)
 
     # Draw row labels from 1 - 10 on the left of the board
@@ -281,7 +282,6 @@ def drawBoard(mouseTile):
                 boardY + y * tileSize + tileSize // 2
             )
         )
-
         screen.blit(label, labelRect)
 
     for row in board:
