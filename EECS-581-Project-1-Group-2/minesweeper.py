@@ -200,7 +200,7 @@ def flag_bombs():
 
 # Builds a fresh board with new bombs and clears the loss state
 def reset_game():
-    global board, game_over, game_won, bombs_placed
+    global board, game_over, game_won, bombs_placed, AI_on
     board = [
         [Tile(x, y) for x in range(boardSize)]
         for y in range(boardSize)
@@ -208,6 +208,7 @@ def reset_game():
     game_over = False
     game_won = False
     bombs_placed = False
+    AI_on = False
 
 # Sets tile state to number of bombs surrounding
 # iterates through all tiles around clicked tile
@@ -248,6 +249,52 @@ def is_valid_index(x, y) -> bool:
     return True
 
 # Draw the board for the user
+
+# Easy bot that will click on not flagged, and not revealed tiles - Drew Medlock
+def toggle_easy_bot():
+    global AI_on
+    if AI_on:
+        AI_on = False
+        return
+    else:
+        AI_on = True
+
+def set_bot_type(bot_type):
+    global AI_type
+    AI_type = bot_type
+
+def do_AI_action():
+    if AI_type == 'easy':
+        easy_AI_action()
+
+def easy_AI_action():
+    global game_over, bombs_placed
+    revealed_tile = False
+    while not revealed_tile:
+        if game_over:
+            break
+        x = random.randint(0, boardSize - 1)
+        y = random.randint(0, boardSize - 1)
+        tile = board[x][y]
+        if tile.state == -1:
+            if not bombs_placed:
+                set_bombs(board, tile)
+                bombs_placed = True
+                revealed_tile = True
+
+            if tile.has_bomb:
+                tile.state = -3
+                reveal_bombs()
+                revealed_tile = True
+                game_over = True
+            else:
+                reveal_tile(tile)
+                revealed_tile = True
+                if check_win():
+                    flag_bombs()
+                    game_won = True
+        elif tile.state == -2:
+            continue
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -314,6 +361,10 @@ mouseTile = None
 game_over = False
 game_won = False
 bombs_placed = False
+AI_on = False
+AI_type = ''
+
+AI_event = pygame.USEREVENT + 1
 
 while True:
 
@@ -324,6 +375,8 @@ while True:
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if event.type == AI_event:
+            do_AI_action()
 
         # Keep track of which tile the mouse is currently over
         elif event.type == pygame.MOUSEMOTION:
@@ -341,6 +394,14 @@ while True:
                         for tile in row:
                             if tile.has_bomb:
                                 tile.state = -2
+            elif event.key == pygame.K_e:
+                if AI_on:
+                    toggle_easy_bot()
+                    pygame.time.set_timer(AI_event, 0)
+                else:
+                    toggle_easy_bot()
+                    set_bot_type('easy')
+                    pygame.time.set_timer(AI_event, 1000)
 
         # Check for mouse clicks, run if one is made
         elif event.type == pygame.MOUSEBUTTONUP:
