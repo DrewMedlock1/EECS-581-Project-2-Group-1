@@ -12,6 +12,7 @@
 #           Resize the game window - Drew Medlock
 #               - Used Pygame documentation: https://www.pygame.org/docs/ref/display.html
 #           Guarantee 0 mines around first click - Drew Medlock
+#           Added Menu screen to select difficulty and number of mines - Kyler Russell 10/6/2026
 #       AI Modes added:
 #           Easy mode - Drew Medlock
 # Date: 9/19/2026
@@ -373,6 +374,230 @@ def drawBoard(mouseTile):
                     numbers[tile.state],
                     tile.rect
                 )
+
+# ---------------------------------------------------------------------------
+# Game setup selection screen (number of mines + AI settings)
+#
+# The selection screen only records the player's choices in flags. When
+# "Start Game" is pressed, start_game() copies them into the flags used by
+# the game itself:
+#   max_num_of_bombs - number of mines placed on the board (10-20)
+#   AI_mode          - 'manual', 'interactive', or 'automatic'
+#   AI_difficulty    - 'easy', 'medium', or 'hard' ('' when AI_mode is 'manual')
+#   AI_type          - same as AI_difficulty, read by do_AI_action()
+# The AI behavior for each mode/difficulty still needs to be implemented.
+# Used Opus 5.5 to code this, given the instructions to Complete the sections 
+# in the code which describe adding the selection for the AI and number of mines. 
+# the code was then tested by Kyler Russell.
+# ---------------------------------------------------------------------------
+
+MIN_MINES = 10
+MAX_MINES = 20
+
+AI_MODES = ['manual', 'interactive', 'automatic']
+AI_MODE_LABELS = {
+    'manual': 'Manual',
+    'interactive': 'Interactive',
+    'automatic': 'Automatic'
+}
+AI_MODE_DESCRIPTIONS = {
+    'manual': 'No AI',
+    'interactive': 'You and the AI alternate turns',
+    'automatic': 'AI plays until it loses'
+}
+AI_DIFFICULTIES = ['easy', 'medium', 'hard']
+AI_DIFFICULTY_LABELS = {
+    'easy': 'Easy',
+    'medium': 'Medium',
+    'hard': 'Hard'
+}
+
+# Colors used by the selection screen
+gray = (192, 192, 192)
+light_gray = (225, 225, 225)
+dark_gray = (90, 90, 90)
+red = (200, 0, 0)
+green = (0, 150, 0)
+
+# Choices currently shown on the selection screen
+in_selection = True                     # True while the selection screen is showing
+mine_input_text = str(max_num_of_bombs) # Text typed into the mine count box
+mine_input_active = True                # True when the mine count box accepts typing
+selected_AI_mode = 'manual'
+selected_AI_difficulty = 'easy'
+
+# Settings for the game being played, set by start_game()
+AI_mode = 'manual'
+AI_difficulty = ''
+
+# Clickable areas on the selection screen, filled in by drawSelection()
+selection_rects = {}
+selection_mouse_pos = (0, 0)
+
+def parse_mine_count():
+    """
+    Returns the number typed into the mine count box, or None if it is not a whole number from 10-20
+    """
+    if not mine_input_text.isdigit():
+        return None
+    count = int(mine_input_text)
+    if MIN_MINES <= count <= MAX_MINES:
+        return count
+    return None
+
+def draw_text_centered(text, color, center):
+    """
+    Draws a line of text centered on the given point
+    """
+    label = font.render(text, True, color)
+    screen.blit(label, label.get_rect(center=center))
+
+def draw_button(rect, text, selected=False, enabled=True):
+    """
+    Draws a selectable button. Selected buttons are filled dark, and buttons under the mouse are highlighted
+    """
+    if not enabled:
+        fill, text_color = light_gray, gray
+    elif selected:
+        fill, text_color = dark_gray, white
+    elif rect.collidepoint(selection_mouse_pos):
+        fill, text_color = light_gray, black
+    else:
+        fill, text_color = gray, black
+
+    pygame.draw.rect(screen, fill, rect)
+    pygame.draw.rect(screen, black, rect, 1)
+    draw_text_centered(text, text_color, rect.center)
+
+def draw_option_row(options, labels, selected, top, key_prefix):
+    """
+    Draws a row of equally sized buttons, one per option, and saves their rects for click detection
+    """
+    margin = 7
+    gap = 3
+    width = (windowWidth - 2 * margin - gap * (len(options) - 1)) // len(options)
+    for i, option in enumerate(options):
+        rect = pygame.Rect(margin + i * (width + gap), top, width, 18)
+        draw_button(rect, labels[option], selected=(option == selected))
+        selection_rects[key_prefix + option] = rect
+
+def drawSelection():
+    """
+    This draws a box which displays a header which says enter the number of mines 10-20
+    Then beneath this is a box which allows the user to enter a number from 10-20
+    Beneath this is another header saying select the AI type, with the options being
+    manual (no AI), interactive (alternate turns), and automatic (AI plays until loss)
+    If any of the AI settings are chosen, there should be sub-options which show up beneath
+    with a header saying select AI difficulty / skill (easy, medium, hard)
+    At the bottom of the box there should be a button that says start game that will start the game
+    """
+    selection_rects.clear()
+    screen.fill(white)
+
+    # Outer box around the whole selection screen
+    pygame.draw.rect(screen, black, pygame.Rect(4, 4, windowWidth - 8, windowHeight - 8), 1)
+
+    center_x = windowWidth // 2
+    mine_count = parse_mine_count()
+
+    # Mine count header, turns red while the typed value is not valid
+    draw_text_centered(
+        "Number of mines (" + str(MIN_MINES) + "-" + str(MAX_MINES) + ")",
+        black if mine_count is not None else red,
+        (center_x, 16)
+    )
+
+    # Mine count input box
+    input_rect = pygame.Rect(center_x - 25, 26, 50, 18)
+    pygame.draw.rect(screen, white, input_rect)
+    pygame.draw.rect(screen, dark_gray if mine_input_active else gray, input_rect, 2 if mine_input_active else 1)
+    input_display = mine_input_text
+    if mine_input_active and (pygame.time.get_ticks() // 500) % 2 == 0:
+        input_display += "|"    # Blinking cursor
+    draw_text_centered(input_display, black, input_rect.center)
+    selection_rects['mine_input'] = input_rect
+
+    # AI type header, options, and a description of the chosen option
+    draw_text_centered("Select AI type", black, (center_x, 58))
+    draw_option_row(AI_MODES, AI_MODE_LABELS, selected_AI_mode, 66, 'mode_')
+    draw_text_centered(AI_MODE_DESCRIPTIONS[selected_AI_mode], dark_gray, (center_x, 94))
+
+    # AI difficulty sub-options, only shown when an AI mode is chosen
+    if selected_AI_mode != 'manual':
+        draw_text_centered("Select AI difficulty", black, (center_x, 116))
+        draw_option_row(AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, selected_AI_difficulty, 124, 'difficulty_')
+
+    # Start game button at the bottom of the box, disabled until the mine count is valid
+    start_rect = pygame.Rect(center_x - 45, windowHeight - 36, 90, 22)
+    draw_button(start_rect, "Start Game", enabled=(mine_count is not None))
+    selection_rects['start'] = start_rect
+
+def handle_selection_event(event):
+    """
+    Handles mouse and keyboard input while the selection screen is showing
+    """
+    global mine_input_text, mine_input_active, selected_AI_mode, selected_AI_difficulty, selection_mouse_pos
+
+    if event.type == pygame.MOUSEMOTION:
+        selection_mouse_pos = event.pos
+
+    elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+        # The mine count box only accepts typing after it is clicked
+        mine_input_active = selection_rects.get('mine_input', pygame.Rect(0, 0, 0, 0)).collidepoint(event.pos)
+
+        for key, rect in selection_rects.items():
+            if not rect.collidepoint(event.pos):
+                continue
+            if key.startswith('mode_'):
+                selected_AI_mode = key[len('mode_'):]
+            elif key.startswith('difficulty_'):
+                selected_AI_difficulty = key[len('difficulty_'):]
+            elif key == 'start' and parse_mine_count() is not None:
+                start_game()
+
+    elif event.type == pygame.KEYDOWN:
+        # Enter starts the game from anywhere on the selection screen
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if parse_mine_count() is not None:
+                start_game()
+            return
+
+        if not mine_input_active:
+            return
+
+        if event.key == pygame.K_BACKSPACE:
+            mine_input_text = mine_input_text[:-1]
+
+        # Up / down arrows step the mine count within 10-20
+        elif event.key in (pygame.K_UP, pygame.K_DOWN):
+            step = 1 if event.key == pygame.K_UP else -1
+            current = int(mine_input_text) if mine_input_text.isdigit() else MIN_MINES - step
+            mine_input_text = str(max(MIN_MINES, min(MAX_MINES, current + step)))
+
+        # Only accept digits, at most 2 characters
+        elif event.unicode.isdigit() and len(mine_input_text) < 2:
+            mine_input_text += event.unicode
+
+def start_game():
+    """
+    Applies the choices from the selection screen to the game flags and starts a fresh board
+    """
+    global in_selection, max_num_of_bombs, AI_mode, AI_difficulty
+
+    max_num_of_bombs = parse_mine_count()
+    reset_game()
+
+    AI_mode = selected_AI_mode
+    AI_difficulty = selected_AI_difficulty if AI_mode != 'manual' else ''
+    set_bot_type(AI_difficulty)
+
+    # TODO: Start the chosen AI here once it is implemented, e.g.
+    #   'interactive' - let the AI take a move after each player move
+    #   'automatic'   - toggle_bot() and pygame.time.set_timer(AI_event, 1000)
+
+    in_selection = False
+    print("Starting game with", max_num_of_bombs, "mines, AI mode:", AI_mode, "AI difficulty:", AI_difficulty)
+
 # ----------
 # Main loop
 # ----------
@@ -387,6 +612,18 @@ AI_type = ''
 AI_event = pygame.USEREVENT + 1
 
 while True:
+    # Draw selection box for the AI and number of mines
+    if in_selection:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            handle_selection_event(event)
+
+        drawSelection()
+        pygame.display.flip()
+        clock.tick(60)
+        continue
 
     # Catch-all event tracker
     for event in pygame.event.get():
