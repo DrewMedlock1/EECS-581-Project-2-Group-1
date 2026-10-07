@@ -386,10 +386,17 @@ def set_bot_type(bot_type):
 
 def do_AI_action():
     """
-    Dispatcher function based on assigned AI type to correct level of AI
+    Dispatcher function based on assigned AI type to correct level of AI. Each call is one AI turn,
+    and it does nothing once the game has ended.
+    Author: Drew Medlock, medium / hard levels and the game-over check added by Alex Rawson - created
+    with the assistance of Claude (Opus 5.5)
     """
+    if game_over or game_won:
+        return
     if AI_type == 'easy':
         easy_AI_action()
+    elif AI_type == 'medium':
+        medium_AI_action()
 
 def easy_AI_action():
     """
@@ -403,6 +410,53 @@ def easy_AI_action():
     tile = random_hidden_tile()
     if tile is not None:
         open_tile(tile)
+
+# Medium AI
+def apply_basic_rules() -> bool:
+    """
+    Looks at each revealed number tile and applies the first of the two basic rules that does something:
+      Rule 1: if the tile's covered neighbors (hidden + flagged) equal its number, every one of them is a
+              mine, so flag the hidden ones. Flagged neighbors are counted as covered so the rule still
+              works after some of the mines around the tile were already flagged.
+      Rule 2: if the tile's flagged neighbors equal its number, all of its mines are found, so open the
+              rest of its hidden neighbors.
+    One rule application is one AI turn, but it may flag or open several tiles at once since both rules
+    act on "all" hidden neighbors. Returns True if a rule was applied, False if neither rule applies.
+    Note: the AI trusts every flag on the board, so in interactive mode a wrong flag placed by the player
+    can make Rule 2 open a mine.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    for row in board:
+        for tile in row:
+            if not 1 <= tile.state <= 8:
+                continue
+
+            around = neighbors(tile)
+            hidden = [n for n in around if n.state == -1]
+            if not hidden:
+                continue    # Nothing left to do around this tile
+            flagged = sum(1 for n in around if n.state == -2)
+
+            # Rule 1: every covered neighbor must be a mine
+            if len(hidden) + flagged == tile.state:
+                for n in hidden:
+                    flag_tile(n)
+                return True
+
+            # Rule 2: all mines around this tile are flagged, so the other neighbors are safe
+            if flagged == tile.state:
+                for n in hidden:
+                    open_tile(n)    # open_tile ignores the rest if one of these ends the game
+                return True
+    return False
+
+def medium_AI_action():
+    """
+    Applies one of the basic rules if possible, otherwise reveals a random hidden tile like the easy AI
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if not apply_basic_rules():
+        easy_AI_action()
 
 def drawBoard(mouseTile):
     screen.fill(white)
