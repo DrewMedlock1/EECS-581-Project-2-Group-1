@@ -397,6 +397,8 @@ def do_AI_action():
         easy_AI_action()
     elif AI_type == 'medium':
         medium_AI_action()
+    elif AI_type == 'hard':
+        hard_AI_action()
 
 def easy_AI_action():
     """
@@ -456,6 +458,73 @@ def medium_AI_action():
     Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
     """
     if not apply_basic_rules():
+        easy_AI_action()
+
+# Hard AI
+def apply_121_rule() -> bool:
+    """
+    Looks for three side-by-side revealed tiles (in a row or a column) that read 1-2-1. When every
+    covered neighbor of those three tiles lies in the single line of tiles along one side of them, the
+    two outer tiles of that line are mines (flag them) and the middle one is safe (open it).
+
+    Why the "one side" check is needed: call the five tiles of the side line a, b, c, d, e, where
+    b, c, d sit next to the 1, 2, 1. If those are the only covered tiles the three numbers can see,
+    then a+b+c = 1, b+c+d = 2 and c+d+e = 1 (a revealed or off-board tile counts as 0). The first
+    equation gives b+c <= 1, so d = 1 to reach 2. The last equation then forces c = 0 and e = 0, and by
+    symmetry b = 1 and a = 0. If covered tiles were also on the other side (or beside the ends), the
+    numbers could be satisfied by those tiles instead and the deduction would not hold, so the
+    pattern is skipped there.
+
+    Flags already in the side line are trusted, like in the basic rules. A pattern only counts if it
+    still has an outer tile to flag or a middle tile to open. Returns True if the rule was applied.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    for row in board:
+        for middle in row:
+            if middle.state != 2:
+                continue
+
+            # (ax, ay) steps along the pattern: (1, 0) checks a row, (0, 1) checks a column.
+            # (px, py) steps across it, toward the side line.
+            for ax, ay in ((1, 0), (0, 1)):
+                px, py = ay, ax
+                if not (is_valid_index(middle.x - ax, middle.y - ay) and is_valid_index(middle.x + ax, middle.y + ay)):
+                    continue
+                first = board[middle.y - ay][middle.x - ax]
+                last = board[middle.y + ay][middle.x + ax]
+                if first.state != 1 or last.state != 1:
+                    continue
+
+                # Every hidden or flagged tile that touches any of the three numbers
+                covered = {n for t in (first, middle, last) for n in neighbors(t) if n.state in (-1, -2)}
+                if not covered:
+                    continue
+
+                for side in (-1, 1):
+                    # Distance of a tile from the pattern, measured across it (-1 or 1 is the side line)
+                    if not all((n.x - middle.x) * px + (n.y - middle.y) * py == side for n in covered):
+                        continue
+
+                    # The side line is on the board here, since the covered tiles are in it
+                    outer = [board[t.y + py * side][t.x + px * side] for t in (first, last)]
+                    inner = board[middle.y + py * side][middle.x + px * side]
+                    to_flag = [t for t in outer if t.state == -1]
+                    if not to_flag and inner.state != -1:
+                        continue    # Pattern already solved
+
+                    for t in to_flag:
+                        flag_tile(t)
+                    open_tile(inner)    # Ignored if the middle tile is flagged or already revealed
+                    return True
+    return False
+
+def hard_AI_action():
+    """
+    Applies the basic rules first, then the 1-2-1 pattern, and only reveals a random hidden tile
+    when neither finds a move
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if not apply_basic_rules() and not apply_121_rule():
         easy_AI_action()
 
 def drawBoard(mouseTile):
