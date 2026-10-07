@@ -13,6 +13,8 @@
 #               - Used Pygame documentation: https://www.pygame.org/docs/ref/display.html
 #           Guarantee 0 mines around first click - Drew Medlock
 #           Added Menu screen to select difficulty and number of mines - Kyler Russell 10/6/2026
+#           Added game timer and local leaderboard of fastest win times - Luke Reicherter 10/6/2026
+#               - Created with the assistance of Claude (Opus 5.5)
 #       AI Modes added:
 #           Easy mode - Drew Medlock
 # Date: 9/19/2026
@@ -20,6 +22,7 @@
 import pygame
 import sys
 import random
+import json  # Used to save the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
 from pathlib import Path
 
 pygame.init()
@@ -209,9 +212,26 @@ def flag_bombs():
             if tile.has_bomb:
                 tile.state = -2
 
+# Game timer - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+# The timer starts on the first reveal (when the bombs are placed) and stops when the game is won or lost
+def start_timer():
+    global game_start_ticks
+    game_start_ticks = pygame.time.get_ticks()
+
+def stop_timer():
+    global final_time
+    final_time = elapsed_seconds()
+
+def elapsed_seconds() -> float:
+    if game_start_ticks is None:
+        return 0.0
+    if final_time is not None:
+        return final_time
+    return (pygame.time.get_ticks() - game_start_ticks) / 1000
+
 # Builds a fresh board with new bombs and clears the loss state
 def reset_game():
-    global board, game_over, game_won, bombs_placed, AI_on
+    global board, game_over, game_won, bombs_placed, AI_on, game_start_ticks, final_time, ai_used
     board = [
         [Tile(x, y) for x in range(boardSize)]
         for y in range(boardSize)
@@ -220,6 +240,11 @@ def reset_game():
     game_won = False
     bombs_placed = False
     AI_on = False
+    # Reset the timer and AI tracking for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    game_start_ticks = None
+    final_time = None
+    # Games where the AI made moves are not eligible for the leaderboard
+    ai_used = AI_mode != 'manual'
 
 # Sets tile state to number of bombs surrounding
 # iterates through all tiles around clicked tile
@@ -291,10 +316,12 @@ def easy_AI_action():
     """
     Randomly chooses a tile to attempt to reveal it, if it is already revealed or is flagged it picks another
     """
-    global game_over, bombs_placed
+    # Added game_won to the globals and stop on a win so a won game no longer loops forever,
+    # and start / stop the timer - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    global game_over, game_won, bombs_placed
     revealed_tile = False
     while not revealed_tile:
-        if game_over:
+        if game_over or game_won:
             break
         x = random.randint(0, boardSize - 1)
         y = random.randint(0, boardSize - 1)
@@ -303,6 +330,7 @@ def easy_AI_action():
             if not bombs_placed:
                 set_bombs(board, tile)
                 bombs_placed = True
+                start_timer()
                 revealed_tile = True
 
             if tile.has_bomb:
@@ -310,12 +338,14 @@ def easy_AI_action():
                 reveal_bombs()
                 revealed_tile = True
                 game_over = True
+                stop_timer()
             else:
                 reveal_tile(tile)
                 revealed_tile = True
                 if check_win():
                     flag_bombs()
                     game_won = True
+                    stop_timer()
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -527,6 +557,11 @@ def drawSelection():
         draw_text_centered("Select AI difficulty", black, (center_x, 116))
         draw_option_row(AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, selected_AI_difficulty, 124, 'difficulty_')
 
+    # Leaderboard button above the start button - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    leaderboard_rect = pygame.Rect(center_x - 45, windowHeight - 62, 90, 20)
+    draw_button(leaderboard_rect, "Leaderboard")
+    selection_rects['leaderboard'] = leaderboard_rect
+
     # Start game button at the bottom of the box, disabled until the mine count is valid
     start_rect = pygame.Rect(center_x - 45, windowHeight - 36, 90, 22)
     draw_button(start_rect, "Start Game", enabled=(mine_count is not None))
@@ -554,6 +589,10 @@ def handle_selection_event(event):
                 selected_AI_difficulty = key[len('difficulty_'):]
             elif key == 'start' and parse_mine_count() is not None:
                 start_game()
+            # Open the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+            elif key == 'leaderboard':
+                # Show the mine count typed in the box, or the last game's if the box isn't valid
+                open_leaderboard(parse_mine_count() or max_num_of_bombs)
 
     elif event.type == pygame.KEYDOWN:
         # Enter starts the game from anywhere on the selection screen
@@ -585,11 +624,13 @@ def start_game():
     global in_selection, max_num_of_bombs, AI_mode, AI_difficulty
 
     max_num_of_bombs = parse_mine_count()
-    reset_game()
 
     AI_mode = selected_AI_mode
     AI_difficulty = selected_AI_difficulty if AI_mode != 'manual' else ''
     set_bot_type(AI_difficulty)
+
+    # reset_game() moved after the AI settings so it knows whether the AI is playing - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    reset_game()
 
     # TODO: Start the chosen AI here once it is implemented, e.g.
     #   'interactive' - let the AI take a move after each player move
@@ -597,6 +638,221 @@ def start_game():
 
     in_selection = False
     print("Starting game with", max_num_of_bombs, "mines, AI mode:", AI_mode, "AI difficulty:", AI_difficulty)
+
+# ---------------------------------------------------------------------------
+# Local leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+#
+# Keeps the fastest win times (in seconds) in leaderboard.json next to this
+# file. Each mine count (10-20) has its own top LEADERBOARD_SIZE, so a win
+# is only compared against games played with the same number of mines.
+# Lower times rank higher; ties keep the earlier entry ahead. Only games
+# won without any AI moves are eligible. When a win makes the top times for
+# its mine count, the player is asked for a name before it is saved.
+#   leaderboard         - every saved entry, sorted fastest first
+#   entering_name       - True while the name entry screen is showing
+#   showing_leaderboard - True while the leaderboard screen is showing
+#   leaderboard_mines   - mine count of the leaderboard being shown
+#   highlight_index     - row of the newest entry to highlight, or None
+# ---------------------------------------------------------------------------
+
+LEADERBOARD_FILE = BASE_DIR / "leaderboard.json"
+LEADERBOARD_SIZE = 10
+NAME_MAX_LENGTH = 8
+
+entering_name = False
+name_input_text = ""
+showing_leaderboard = False
+leaderboard_mines = MIN_MINES
+highlight_index = None
+
+def keep_top_times(entries):
+    """
+    Sorts entries fastest first and keeps only the top LEADERBOARD_SIZE for each mine count
+    """
+    entries.sort(key=lambda e: e['time'])  # Stable sort keeps earlier ties ahead
+    kept = []
+    counts = {}
+    for entry in entries:
+        counts[entry['mines']] = counts.get(entry['mines'], 0) + 1
+        if counts[entry['mines']] <= LEADERBOARD_SIZE:
+            kept.append(entry)
+    return kept
+
+def times_for_mines(mines):
+    """
+    Returns the ranked times for one mine count
+    """
+    return [entry for entry in leaderboard if entry['mines'] == mines]
+
+def load_leaderboard():
+    """
+    Reads the saved leaderboard, returning an empty one if the file is missing or unreadable
+    """
+    try:
+        data = json.loads(LEADERBOARD_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+
+    entries = []
+    for entry in data if isinstance(data, list) else []:
+        try:
+            entries.append({
+                'name': str(entry['name']),
+                'time': float(entry['time']),
+                'mines': int(entry['mines'])
+            })
+        except (KeyError, TypeError, ValueError):
+            continue    # Skip malformed entries instead of losing the whole file
+    return keep_top_times(entries)
+
+def save_leaderboard():
+    try:
+        LEADERBOARD_FILE.write_text(json.dumps(leaderboard, indent=2))
+    except OSError as error:
+        print("Could not save leaderboard:", error)
+
+def qualifies_for_leaderboard(seconds, mines) -> bool:
+    times = times_for_mines(mines)
+    return len(times) < LEADERBOARD_SIZE or seconds < times[-1]['time']
+
+def add_leaderboard_entry(name, seconds, mines):
+    """
+    Inserts a new time, trims its mine count's leaderboard to the max size, saves it, and returns the new entry's row
+    """
+    global leaderboard
+    entry = {'name': name, 'time': round(seconds, 2), 'mines': mines}
+    leaderboard.append(entry)
+    leaderboard = keep_top_times(leaderboard)
+    save_leaderboard()
+    return next((i for i, e in enumerate(times_for_mines(mines)) if e is entry), None)
+
+def handle_win():
+    """
+    Called when the player wins: stops the timer and asks for a name if the time makes the leaderboard
+    """
+    global entering_name, name_input_text
+    stop_timer()
+    if not ai_used and qualifies_for_leaderboard(final_time, max_num_of_bombs):
+        entering_name = True
+        name_input_text = ""
+
+def open_leaderboard(mines, highlight=None):
+    """
+    Shows the leaderboard for the given mine count, optionally highlighting one row
+    """
+    global showing_leaderboard, leaderboard_mines, highlight_index
+    showing_leaderboard = True
+    leaderboard_mines = mines
+    highlight_index = highlight
+
+def drawNameEntry():
+    """
+    Shows the winning time and a box for the player to type their name
+    """
+    screen.fill(white)
+    pygame.draw.rect(screen, black, pygame.Rect(4, 4, windowWidth - 8, windowHeight - 8), 1)
+    center_x = windowWidth // 2
+
+    draw_text_centered("You win!", green, (center_x, 30))
+    draw_text_centered("Time: " + format(final_time, ".2f") + "s", black, (center_x, 48))
+    draw_text_centered("Top " + str(LEADERBOARD_SIZE) + " for " + str(max_num_of_bombs) + " mines!", black, (center_x, 66))
+    draw_text_centered("Enter your name", black, (center_x, 96))
+
+    input_rect = pygame.Rect(center_x - 45, 106, 90, 18)
+    pygame.draw.rect(screen, white, input_rect)
+    pygame.draw.rect(screen, dark_gray, input_rect, 2)
+    input_display = name_input_text
+    if (pygame.time.get_ticks() // 500) % 2 == 0:
+        input_display += "|"    # Blinking cursor
+    draw_text_centered(input_display, black, input_rect.center)
+
+    draw_text_centered("Enter = save", dark_gray, (center_x, windowHeight - 40))
+    draw_text_centered("Esc = skip", dark_gray, (center_x, windowHeight - 24))
+
+def handle_name_entry_event(event):
+    global entering_name, name_input_text
+    if event.type != pygame.KEYDOWN:
+        return
+
+    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+        name = name_input_text.strip() or "Player"
+        row = add_leaderboard_entry(name, final_time, max_num_of_bombs)
+        entering_name = False
+        open_leaderboard(max_num_of_bombs, row)
+
+    elif event.key == pygame.K_ESCAPE:
+        entering_name = False
+
+    elif event.key == pygame.K_BACKSPACE:
+        name_input_text = name_input_text[:-1]
+
+    # Only accept letters, digits, and spaces so the name fits on the leaderboard
+    elif (event.unicode.isalnum() or event.unicode == " ") and len(name_input_text) < NAME_MAX_LENGTH:
+        name_input_text += event.unicode
+
+def draw_text_aligned(text, color, pos, align):
+    """
+    Draws a line of text anchored at pos, with align being 'midleft' or 'midright'
+    """
+    label = font.render(text, True, color)
+    screen.blit(label, label.get_rect(**{align: pos}))
+
+def drawLeaderboard():
+    """
+    Draws the top times for the selected mine count as rows of rank, name, and time in seconds
+    """
+    screen.fill(white)
+    pygame.draw.rect(screen, black, pygame.Rect(4, 4, windowWidth - 8, windowHeight - 8), 1)
+    center_x = windowWidth // 2
+
+    # Column anchors: rank and time are right aligned, name is left aligned
+    rank_x = 24
+    name_x = 30
+    time_x = windowWidth - 14
+
+    draw_text_centered("Leaderboard", black, (center_x, 14))
+
+    # Mine count being shown, with arrows when there is another mine count to switch to
+    left_arrow = "< " if leaderboard_mines > MIN_MINES else "  "
+    right_arrow = " >" if leaderboard_mines < MAX_MINES else "  "
+    draw_text_centered(left_arrow + str(leaderboard_mines) + " mines" + right_arrow, black, (center_x, 28))
+
+    header_y = 42
+    draw_text_aligned("Name", dark_gray, (name_x, header_y), 'midleft')
+    draw_text_aligned("Secs", dark_gray, (time_x, header_y), 'midright')
+
+    times = times_for_mines(leaderboard_mines)
+    if not times:
+        draw_text_centered("No times yet", dark_gray, (center_x, 100))
+
+    for i, entry in enumerate(times):
+        y = header_y + 14 + i * 13
+        color = green if i == highlight_index else black
+        draw_text_aligned(str(i + 1) + ".", color, (rank_x, y), 'midright')
+        draw_text_aligned(entry['name'], color, (name_x, y), 'midleft')
+        draw_text_aligned(format(entry['time'], ".2f"), color, (time_x, y), 'midright')
+
+    draw_text_centered("Left / Right = mines", dark_gray, (center_x, windowHeight - 28))
+    draw_text_centered("Other keys = back", dark_gray, (center_x, windowHeight - 15))
+
+def handle_leaderboard_event(event):
+    """
+    Left / right arrows switch mine counts. Any other key press or a click closes the leaderboard
+    and returns to the previous screen
+    """
+    global showing_leaderboard, leaderboard_mines, highlight_index
+    if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+        step = 1 if event.key == pygame.K_RIGHT else -1
+        new_mines = max(MIN_MINES, min(MAX_MINES, leaderboard_mines + step))
+        if new_mines != leaderboard_mines:
+            leaderboard_mines = new_mines
+            highlight_index = None  # The highlighted entry belongs to the previous mine count
+
+    elif event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONUP):
+        showing_leaderboard = False
+        highlight_index = None
+
+leaderboard = load_leaderboard()
 
 # ----------
 # Main loop
@@ -608,10 +864,34 @@ game_won = False
 bombs_placed = False
 AI_on = False
 AI_type = ''
+# Timer and leaderboard state - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+game_start_ticks = None
+final_time = None
+ai_used = False
 
 AI_event = pygame.USEREVENT + 1
 
 while True:
+    # Name entry and leaderboard screens draw over both the selection screen and the game
+    # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    if entering_name or showing_leaderboard:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if entering_name:
+                handle_name_entry_event(event)
+            else:
+                handle_leaderboard_event(event)
+
+        if entering_name:
+            drawNameEntry()
+        else:
+            drawLeaderboard()
+        pygame.display.flip()
+        clock.tick(60)
+        continue
+
     # Draw selection box for the AI and number of mines
     if in_selection:
         for event in pygame.event.get():
@@ -643,7 +923,11 @@ while True:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_r:
                 reset_game()
-            
+
+            # Show the leaderboard with L - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+            elif event.key == pygame.K_l:
+                open_leaderboard(max_num_of_bombs)
+
             # Added debug auto win for testing. Press tilde/backquote to flag every bomb
             ## Parker
             elif event.key == pygame.K_BACKQUOTE:
@@ -653,6 +937,7 @@ while True:
                                 tile.state = -2
             elif event.key == pygame.K_e:
                 # Pressing 'e' toggles the easy mode bot on and off
+                ai_used = True  # Bot-assisted games don't count for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
                 if AI_on:
                     toggle_bot()
                     pygame.time.set_timer(AI_event, 0)
@@ -679,17 +964,20 @@ while True:
                     if not bombs_placed:
                         set_bombs(board, tile)
                         bombs_placed = True
+                        start_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
 
                     if tile.has_bomb:
                         tile.state = -3
                         reveal_bombs()
                         game_over = True
+                        stop_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
                     else:
                         reveal_tile(tile)
 
                         if check_win():
                             flag_bombs()
                             game_won = True
+                            handle_win()  # Stops the timer and checks the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
 
             # A right click adds or removes a flag
             elif event.button == 3:
@@ -701,6 +989,14 @@ while True:
 
     drawBoard(mouseTile)
 
+    # Timer under the board: whole seconds while playing, exact time once the game ends
+    # Win / loss message moved down a line to make room - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    if final_time is not None:
+        time_text = "Time: " + format(final_time, ".2f") + "s"
+    else:
+        time_text = "Time: " + str(int(elapsed_seconds())) + "s"
+    draw_text_centered(time_text, black, (windowWidth // 2, boardY + boardHeight + 8))
+
     if game_over or game_won:
         if game_won:
             msg = font.render("You win! R = restart", True, (0, 150, 0))
@@ -709,7 +1005,7 @@ while True:
 
         screen.blit(
             msg,
-            msg.get_rect(center=(windowWidth // 2, boardY + boardHeight + 15))
+            msg.get_rect(center=(windowWidth // 2, boardY + boardHeight + 21))
         )
     pygame.display.flip()
     clock.tick(60)

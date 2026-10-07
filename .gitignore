@@ -214,5 +214,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Minesweeper local leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+leaderboard.json
+
 # Streamlit
 .streamlit/secrets.toml
