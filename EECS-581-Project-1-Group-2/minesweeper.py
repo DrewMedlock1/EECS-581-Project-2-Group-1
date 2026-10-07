@@ -1,5 +1,5 @@
 # Names: Parker Albright, Aidan Atwood, Joseph Wen H Tan, Ever Armenta, Atique Ahanaf Danial, Viren Chowdary Padarthi
-# Project 2 Authors: Drew Medlock
+# Project 2 Authors: Drew Medlock, Kyler Russell, Luke Reicherter, Alex Rawson
 # Course: EECS 581: Software Engineering II
 # Project: Minesweeper
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
@@ -17,6 +17,10 @@
 #               - Created with the assistance of Claude (Opus 5.5)
 #       AI Modes added:
 #           Easy mode - Drew Medlock
+#           Shared move helpers and easy mode fixes - Alex Rawson 10/7/2026
+#           Medium and hard modes (basic rules and the 1-2-1 pattern) - Alex Rawson 10/7/2026
+#           Interactive and automatic AI play started from the menu - Alex Rawson 10/7/2026
+#               - Created with the assistance of Claude (Opus 5.5)
 # Date: 9/19/2026
 
 import pygame
@@ -231,7 +235,7 @@ def elapsed_seconds() -> float:
 
 # Builds a fresh board with new bombs and clears the loss state
 def reset_game():
-    global board, game_over, game_won, bombs_placed, AI_on, game_start_ticks, final_time, ai_used
+    global board, game_over, game_won, bombs_placed, game_start_ticks, final_time, ai_used
     board = [
         [Tile(x, y) for x in range(boardSize)]
         for y in range(boardSize)
@@ -239,12 +243,17 @@ def reset_game():
     game_over = False
     game_won = False
     bombs_placed = False
-    AI_on = False
     # Reset the timer and AI tracking for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
     game_start_ticks = None
     final_time = None
     # Games where the AI made moves are not eligible for the leaderboard
     ai_used = AI_mode != 'manual'
+    # Cancel any AI moves left from the last board, then let the automatic AI start playing the new one.
+    # Doing this here covers both starting from the menu and restarting with R
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    stop_ai_timer()
+    if AI_mode == 'automatic':
+        start_ai_timer()
 
 # Sets tile state to number of bombs surrounding
 # iterates through all tiles around clicked tile
@@ -366,23 +375,69 @@ def flag_tile(tile):
 # Draw the board for the user
 
 # Easy bot that will click on not flagged, and not revealed tiles - Drew Medlock
-def toggle_bot():
-    """
-    This toggles a global AI on vs AI off state to set the timer for 1 second AI moves
-    """
-    global AI_on
-    if AI_on:
-        AI_on = False
-        return
-    else:
-        AI_on = True
-
 def set_bot_type(bot_type):
     """
     This sets a global value for the bot type that is currently being used in the AI action
     """
     global AI_type
     AI_type = bot_type
+
+# ---------------------------------------------------------------------------
+# AI turn timing
+#
+# AI moves arrive as AI_event timer events so the player can watch each move
+# instead of the whole game finishing in a single frame.
+#   AI_on           - True while the AI plays on its own (automatic mode or the e key)
+#   ai_turn_pending - True in interactive mode between the player's move and the AI's reply
+# start_ai_timer() / stop_ai_timer() replace the old toggle_bot() on / off switch,
+# since the AI now has to be stopped from several places (game end, restart, e key)
+# where a toggle could turn it back on by mistake.
+# ---------------------------------------------------------------------------
+
+def start_ai_timer():
+    """
+    Makes the AI play one move every AI_MOVE_DELAY_MS until stopped. Used by automatic mode and the e key.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global AI_on
+    AI_on = True
+    pygame.time.set_timer(AI_event, AI_MOVE_DELAY_MS)
+
+def stop_ai_timer():
+    """
+    Stops all AI play, cancels a pending interactive turn, and drops AI events already in the queue so
+    a stale move can't land on a new board.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global AI_on, ai_turn_pending
+    AI_on = False
+    ai_turn_pending = False
+    pygame.time.set_timer(AI_event, 0)
+    pygame.event.clear(AI_event)
+
+def schedule_ai_turn():
+    """
+    Interactive mode: gives the AI a single move AI_MOVE_DELAY_MS after the player's move, so the player
+    can see the result of their own move first. The player's clicks are ignored until the AI has moved.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global ai_turn_pending
+    ai_turn_pending = True
+    pygame.time.set_timer(AI_event, AI_MOVE_DELAY_MS, loops=1)
+
+def handle_ai_event():
+    """
+    Plays one AI move when its timer fires, and stops the timer once the game is won or lost. Events
+    left over after the AI was stopped are ignored.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global ai_turn_pending
+    if not (AI_on or ai_turn_pending):
+        return
+    ai_turn_pending = False
+    do_AI_action()
+    if game_over or game_won:
+        stop_ai_timer()
 
 def do_AI_action():
     """
@@ -595,7 +650,8 @@ def drawBoard(mouseTile):
 #   AI_mode          - 'manual', 'interactive', or 'automatic'
 #   AI_difficulty    - 'easy', 'medium', or 'hard' ('' when AI_mode is 'manual')
 #   AI_type          - same as AI_difficulty, read by do_AI_action()
-# The AI behavior for each mode/difficulty still needs to be implemented.
+# reset_game() starts automatic play, and the main loop gives the AI a turn
+# after each player move in interactive mode (see "AI turn timing").
 # Used Opus 5.5 to code this, given the instructions to Complete the sections 
 # in the code which describe adding the selection for the AI and number of mines. 
 # the code was then tested by Kyler Russell.
@@ -810,11 +866,9 @@ def start_game():
     set_bot_type(AI_difficulty)
 
     # reset_game() moved after the AI settings so it knows whether the AI is playing - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    # This also starts the AI in automatic mode. Interactive mode waits for the player's first move
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
     reset_game()
-
-    # TODO: Start the chosen AI here once it is implemented, e.g.
-    #   'interactive' - let the AI take a move after each player move
-    #   'automatic'   - toggle_bot() and pygame.time.set_timer(AI_event, 1000)
 
     in_selection = False
     print("Starting game with", max_num_of_bombs, "mines, AI mode:", AI_mode, "AI difficulty:", AI_difficulty)
@@ -1048,6 +1102,9 @@ AI_type = ''
 game_start_ticks = None
 final_time = None
 ai_used = False
+# AI turn state, see "AI turn timing" - Alex Rawson - created with the assistance of Claude (Opus 5.5)
+ai_turn_pending = False
+AI_MOVE_DELAY_MS = 1000     # Time between AI moves, the same 1 second the e key bot already used
 
 AI_event = pygame.USEREVENT + 1
 
@@ -1093,7 +1150,7 @@ while True:
             pygame.quit()
             sys.exit()
         if event.type == AI_event:
-            do_AI_action()
+            handle_ai_event()  # Alex Rawson - created with the assistance of Claude (Opus 5.5)
 
         # Keep track of which tile the mouse is currently over
         elif event.type == pygame.MOUSEMOTION:
@@ -1118,18 +1175,24 @@ while True:
             elif event.key == pygame.K_e:
                 # Pressing 'e' toggles the easy mode bot on and off
                 ai_used = True  # Bot-assisted games don't count for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+                # Now uses the difficulty chosen in the menu, or easy when no AI was chosen
+                # Alex Rawson - created with the assistance of Claude (Opus 5.5)
                 if AI_on:
-                    toggle_bot()
-                    pygame.time.set_timer(AI_event, 0)
+                    stop_ai_timer()
                 else:
-                    toggle_bot()
-                    set_bot_type('easy')
-                    pygame.time.set_timer(AI_event, 1000)
+                    if AI_type == '':
+                        set_bot_type('easy')
+                    start_ai_timer()
 
         # Check for mouse clicks, run if one is made
         elif event.type == pygame.MOUSEBUTTONUP:
             # Ignore all clicks once the game is lost
             if game_over:
+                continue
+
+            # The board belongs to the AI in automatic mode, and during the AI's turn in interactive mode
+            # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+            if AI_mode == 'automatic' or ai_turn_pending:
                 continue
 
             tile = getTile(event.pos)
@@ -1138,19 +1201,30 @@ while True:
             if tile is None:
                 continue
 
+            player_moved = False    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+
             # A left click on a covered tile reveals what's under it
             # Uses the shared open_tile() helper - Alex Rawson - created with the assistance of Claude (Opus 5.5)
             if event.button == 1:
                 if tile.state == -1:
                     open_tile(tile)
+                    player_moved = True
 
             # A right click adds or removes a flag
             elif event.button == 3:
                 if tile.state == -1:
                     tile.state = -2
+                    player_moved = True
 
                 elif tile.state == -2:
                     tile.state = -1
+                    player_moved = True
+
+            # Interactive mode: any move that changed the board (a reveal, or placing or removing a flag)
+            # ends the player's turn, and the AI answers with one move
+            # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+            if player_moved and AI_mode == 'interactive' and not (game_over or game_won):
+                schedule_ai_turn()
 
     drawBoard(mouseTile)
 
@@ -1172,5 +1246,14 @@ while True:
             msg,
             msg.get_rect(center=(windowWidth // 2, boardY + boardHeight + 21))
         )
+
+    # While an AI game is in progress, say whose turn it is in the message line
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    elif AI_mode == 'interactive':
+        draw_text_centered("AI's turn..." if ai_turn_pending else "Your turn", dark_gray,
+                           (windowWidth // 2, boardY + boardHeight + 21))
+    elif AI_mode == 'automatic':
+        draw_text_centered("AI playing (" + AI_DIFFICULTY_LABELS[AI_difficulty] + ")", dark_gray,
+                           (windowWidth // 2, boardY + boardHeight + 21))
     pygame.display.flip()
     clock.tick(60)
