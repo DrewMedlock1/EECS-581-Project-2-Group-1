@@ -1,0 +1,42 @@
+Project 2 
+Meeting 2 - 9/30/2026
+Location: Eaton 3001
+Objective: Discuss the current progress of the project. Decide on what needs to be completed next.
+Atttendence: Luke, Alex, Carter, Blake, Kyler
+Details: Daily Scrum with Huy, discussed current p2 progress and future additions needed. 
+
+Person-Hours Estimations
+        Each group member was asked to pick a number in the fibonacci sequence to represent the difficulty of a specific task in the project. Results are as follows: 
+        
+        Estimations for AI Implementation:
+                Alex - 5
+                Carter - 5
+                Blake - 5
+                Kyler - 5
+                Luke - 5    
+                -----------
+                Overall Agreement - 5
+        
+        Estimations for Adding needed Requirements:
+                Alex - 3
+                Carter - 3
+                Blake - 3
+			Reasoning: Need to find out what requirements are missing
+`               Kyler - 3 
+                Luke - 2   
+                -----------
+                Overall Agreement - 3
+        
+        Estimations for Leadeboard:
+                Alex - 3
+                Carter - 3
+                Blake - 3
+                Kyler - 3   
+                Luke - 1
+			Reasoning: Easy to create a local leaderboard   
+                -----------
+                Overall Agreement - 3
+
+Tasks
+	Everyone - work on AI implementation, tests, and leaderboard. Determine if the inherited project is missing any requirements.
+
