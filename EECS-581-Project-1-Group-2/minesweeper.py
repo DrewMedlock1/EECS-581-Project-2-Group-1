@@ -284,6 +284,85 @@ def is_valid_index(x, y) -> bool:
             
     return True
 
+# ---------------------------------------------------------------------------
+# Shared move helpers
+#
+# The player's mouse clicks and every AI difficulty make their moves through
+# these helpers, so a move follows the same rules (first-click bomb
+# placement, timer, loss, win and leaderboard) no matter who makes it.
+# Before this, the easy bot kept its own copy of the click logic.
+# ---------------------------------------------------------------------------
+
+def neighbors(tile):
+    """
+    Returns the up to 8 tiles touching the given tile, skipping positions off the board
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    result = []
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            nx = tile.x + dx
+            ny = tile.y + dy
+            if (dx, dy) != (0, 0) and is_valid_index(nx, ny):
+                result.append(board[ny][nx])  # The board is stored rows first, so it is board[y][x]
+    return result
+
+def hidden_tiles():
+    """
+    Returns every tile that is still covered and not flagged (state -1)
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    return [tile for row in board for tile in row if tile.state == -1]
+
+def random_hidden_tile():
+    """
+    Picks a random covered, unflagged tile, or returns None if there are none left.
+    Choosing from a list of hidden tiles (instead of rolling random positions until one
+    is hidden) means this always finishes, even when every covered tile is flagged.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    candidates = hidden_tiles()
+    if not candidates:
+        return None
+    return random.choice(candidates)
+
+def open_tile(tile):
+    """
+    Reveals a covered tile for either the player or the AI. The first reveal of a game
+    places the bombs and starts the timer. Revealing a bomb loses the game, and revealing
+    the last safe tile wins it. Flagged, revealed and post-game tiles are ignored.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5), moved here from the mouse
+    click handler (timer / leaderboard calls by Luke Reicherter)
+    """
+    global game_over, game_won, bombs_placed
+    if game_over or game_won or tile.state != -1:
+        return
+
+    if not bombs_placed:
+        set_bombs(board, tile)
+        bombs_placed = True
+        start_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+
+    if tile.has_bomb:
+        tile.state = -3
+        reveal_bombs()
+        game_over = True
+        stop_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    else:
+        reveal_tile(tile)
+        if check_win():
+            flag_bombs()
+            game_won = True
+            handle_win()  # Stops the timer and checks the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+
+def flag_tile(tile):
+    """
+    Places a flag on a covered tile. The AI uses this to mark tiles it has proven are mines.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if tile.state == -1:
+        tile.state = -2
+
 # Draw the board for the user
 
 # Easy bot that will click on not flagged, and not revealed tiles - Drew Medlock
@@ -314,38 +393,16 @@ def do_AI_action():
 
 def easy_AI_action():
     """
-    Randomly chooses a tile to attempt to reveal it, if it is already revealed or is flagged it picks another
+    Randomly chooses a tile to reveal, never picking a tile that is already revealed or is flagged.
+    The old version rolled random positions with board[x][y] (the board is board[y][x]) until it found
+    a covered tile. That looped forever when no covered, unflagged tiles were left (e.g. the player had
+    flagged a safe tile). Picking from the list of hidden tiles avoids both problems.
+    Author: Drew Medlock, rewritten to use the shared move helpers by Alex Rawson - created with the
+    assistance of Claude (Opus 5.5)
     """
-    # Added game_won to the globals and stop on a win so a won game no longer loops forever,
-    # and start / stop the timer - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-    global game_over, game_won, bombs_placed
-    revealed_tile = False
-    while not revealed_tile:
-        if game_over or game_won:
-            break
-        x = random.randint(0, boardSize - 1)
-        y = random.randint(0, boardSize - 1)
-        tile = board[x][y]
-        if tile.state == -1:
-            if not bombs_placed:
-                set_bombs(board, tile)
-                bombs_placed = True
-                start_timer()
-                revealed_tile = True
-
-            if tile.has_bomb:
-                tile.state = -3
-                reveal_bombs()
-                revealed_tile = True
-                game_over = True
-                stop_timer()
-            else:
-                reveal_tile(tile)
-                revealed_tile = True
-                if check_win():
-                    flag_bombs()
-                    game_won = True
-                    stop_timer()
+    tile = random_hidden_tile()
+    if tile is not None:
+        open_tile(tile)
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -959,25 +1016,10 @@ while True:
                 continue
 
             # A left click on a covered tile reveals what's under it
+            # Uses the shared open_tile() helper - Alex Rawson - created with the assistance of Claude (Opus 5.5)
             if event.button == 1:
                 if tile.state == -1:
-                    if not bombs_placed:
-                        set_bombs(board, tile)
-                        bombs_placed = True
-                        start_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-
-                    if tile.has_bomb:
-                        tile.state = -3
-                        reveal_bombs()
-                        game_over = True
-                        stop_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-                    else:
-                        reveal_tile(tile)
-
-                        if check_win():
-                            flag_bombs()
-                            game_won = True
-                            handle_win()  # Stops the timer and checks the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+                    open_tile(tile)
 
             # A right click adds or removes a flag
             elif event.button == 3:
