@@ -2,7 +2,9 @@ From Project 1 our estimated hours were accurate using the .75 hours per effort 
 to estimate our hours based on planning poker for the difficulty and applying this efficiency factor.
 
 From planning poker:
+AI Implementation -> 5 (effort) * .75 (person-hours per effort) = 3.75 person-hours
+Fixing Project 1 Requirements -> 3 (effort) * .75 (person-hours per effort) = 2.25 person-hours
+Leaderboard -> 5 (effort) * .75 (person-hours per effort) = 3.75 person-hours
 
-
-
-Meetings:
+Meetings: 30 min in first meeting, 2 1-hour long meetings = 2.5 person-hours * 7 = 17.5 person-hours
+Total Estimate: 27.25 person-hours
