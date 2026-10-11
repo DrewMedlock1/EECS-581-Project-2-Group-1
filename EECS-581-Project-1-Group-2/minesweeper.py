@@ -1,5 +1,5 @@
 # Names: Parker Albright, Aidan Atwood, Joseph Wen H Tan, Ever Armenta, Atique Ahanaf Danial, Viren Chowdary Padarthi
-# Project 2 Authors: Drew Medlock, Kyler Russell, Luke Reicherter, Alex Rawson
+# Project 2 Authors: Drew Medlock, Kyler Russell, Luke Reicherter, Alex Rawson, Blake Pennel
 # Course: EECS 581: Software Engineering II
 # Project: Minesweeper
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
@@ -9,6 +9,8 @@
 #       Fixes:
 #
 #       Features:
+#           Remaining mine count and explicit game status - Blake Pennel 10/11/2026
+#               - Created with the assistance of OpenAI Codex (GPT-6.1 Sol Light)
 #           Resize the game window - Drew Medlock
 #               - Used Pygame documentation: https://www.pygame.org/docs/ref/display.html
 #           Guarantee 0 mines around first click - Drew Medlock
@@ -48,7 +50,8 @@ boardWidth = boardSize * tileSize
 boardHeight = boardSize * tileSize
 
 windowWidth = boardX + boardWidth + 10
-windowHeight = boardY + boardHeight + 30
+# Footer space for the timer, turn message, mine count and game status - Blake
+windowHeight = boardY + boardHeight + 56
 
 screen = pygame.display.set_mode((windowWidth, windowHeight), pygame.SCALED | pygame.RESIZABLE)
                                                                   # Set the window to be both scalable and resizeable
@@ -581,6 +584,33 @@ def hard_AI_action():
     """
     if not apply_basic_rules() and not apply_121_rule():
         easy_AI_action()
+
+# Read the current board every frame so manual and AI flags share the same counter - Blake
+# Over-flagging intentionally produces a negative count; flag behavior is unchanged - Blake
+def draw_game_status():
+    flag_count = sum(tile.state == -2 for row in board for tile in row)
+    remaining_mines = max_num_of_bombs - flag_count
+    draw_text_centered("Mines remaining: " + str(remaining_mines), black,
+                       (windowWidth // 2, boardY + boardHeight + 34))
+
+    status_color = dark_gray
+    if game_won:
+        status = "Victory"
+        status_color = green
+    elif game_over:
+        status = "Game Over: Loss"
+        status_color = (200, 0, 0)
+    elif AI_on:
+        status = "Automatic AI"
+    elif AI_mode == 'interactive':
+        status = "Interactive AI"
+    elif AI_mode == 'automatic':
+        status = "Automatic AI paused"
+    else:
+        status = "Playing"
+    draw_text_centered(status, status_color,
+                       (windowWidth // 2, boardY + boardHeight + 47))
+
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -1255,5 +1285,7 @@ while True:
     elif AI_mode == 'automatic':
         draw_text_centered("AI playing (" + AI_DIFFICULTY_LABELS[AI_difficulty] + ")", dark_gray,
                            (windowWidth // 2, boardY + boardHeight + 21))
+    # Display current flags/status after all player and AI events - Blake
+    draw_game_status()
     pygame.display.flip()
     clock.tick(60)
