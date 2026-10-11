@@ -7,7 +7,8 @@
 #              show a number indicating how many bombs are touching the space.
 # Inputs:
 #     Mouse input to reveal tiles, place/remove flags, and select menu options.
-#     Keyboard input for restart (R), leaderboard (L), AI toggle (E), debug
+#     Keyboard input for restart (R), return to menu after a win or loss (M),
+#     leaderboard (L), AI toggle (E), debug
 #     auto-flag (backquote), menu controls, and leaderboard/name entry controls.
 #     User-selected mine count from 10-20, AI mode, and AI difficulty.
 # Outputs:
@@ -26,6 +27,8 @@
 #               - Used Pygame documentation: https://www.pygame.org/docs/ref/display.html
 #           Guarantee 0 mines around first click - Drew Medlock
 #           Added Menu screen to select difficulty and number of mines - Kyler Russell 10/6/2026
+#           Return to the menu with M after a win or loss - Kyler Russell 10/11/2026
+#               - Created with the assistance of Claude (Opus 5.5)
 #           Added game timer and local leaderboard of fastest win times - Luke Reicherter 10/6/2026
 #               - Created with the assistance of Claude (Opus 5.5)
 #       AI Modes added:
@@ -914,6 +917,18 @@ def start_game():
     in_selection = False
     print("Starting game with", max_num_of_bombs, "mines, AI mode:", AI_mode, "AI difficulty:", AI_difficulty)
 
+def return_to_menu():
+    """
+    Leaves a finished game (win or loss) and shows the selection screen again, so the player can pick a
+    new mine count, AI mode, or AI difficulty without restarting the program. The choices from the last
+    game stay selected on the menu, and start_game() builds a fresh board when Start Game is pressed.
+    Inputs: none (uses the global game state). Outputs: sets in_selection so the main loop draws the menu.
+    Author: Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+    """
+    global in_selection
+    stop_ai_timer()     # Cancel any AI move still scheduled so it can't land on the next board
+    in_selection = True
+
 # ---------------------------------------------------------------------------
 # Local leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
 #
@@ -1202,6 +1217,11 @@ while True:
             if event.key == pygame.K_r:
                 reset_game()
 
+            # Return to the menu with M, only once the game has been won or lost
+            # Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+            elif event.key == pygame.K_m and (game_over or game_won):
+                return_to_menu()
+
             # Show the leaderboard with L - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
             elif event.key == pygame.K_l:
                 open_leaderboard(max_num_of_bombs)
@@ -1277,11 +1297,12 @@ while True:
         time_text = "Time: " + str(int(elapsed_seconds())) + "s"
     draw_text_centered(time_text, black, (windowWidth // 2, boardY + boardHeight + 8))
 
+    # The message lists both restart (R) and menu (M) - menu option added by Kyler Russell 10/11/2026
     if game_over or game_won:
         if game_won:
-            msg = font.render("You win! R = restart", True, (0, 150, 0))
+            msg = font.render("You win! R = restart, M = menu", True, (0, 150, 0))
         else:
-            msg = font.render("You lost! R = restart", True, (200, 0, 0))
+            msg = font.render("You lost! R = restart, M = menu", True, (200, 0, 0))
 
         screen.blit(
             msg,

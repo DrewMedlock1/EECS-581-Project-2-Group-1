@@ -326,6 +326,8 @@ stateDiagram-v2
         Won --> Ready : R / reset_game()
     }
 
+    Won --> Selection : M / return_to_menu()
+    Lost --> Selection : M / return_to_menu()
     Won --> NameEntry : no AI used and time qualifies
     NameEntry --> Leaderboard : Enter / add_leaderboard_entry(), open_leaderboard()
     NameEntry --> Won : Esc / skip saving
