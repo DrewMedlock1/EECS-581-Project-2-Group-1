@@ -1,0 +1,15 @@
+Project 2 
+Meeting 3 - 10/06/2026
+Location: Eaton 3001
+Objective: Discuss the current progress of the project. Decide on what needs to be completed next.
+Atttendence: Luke, Alex, Carter, Blake, Kyler, Kyle, Drew
+Details: Daily Scrum with Huy, discussed current p2 progress, showed leaderboard implementation, discussed final additions. 
+
+Changes made since last meeting:
+	Added time to complete board functionality
+	Added leaderboard, one for each amount of mines
+	Refactored code to improve readability and organization
+	Added Easy mode AI
+
+Tasks
+	Everyone - work on AI implementation and tests. Fix missing requirements in project implementation.
