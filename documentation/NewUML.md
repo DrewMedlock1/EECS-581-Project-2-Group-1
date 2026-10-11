@@ -13,7 +13,7 @@
 
 # NewUML
 
-Source: [`EECS-581-Project-1-Group-2/minesweeper.py`](EECS-581-Project-1-Group-2/minesweeper.py).
+Source: [`EECS-581-Project-1-Group-2/minesweeper.py`](../EECS-581-Project-1-Group-2/minesweeper.py).
 These Mermaid diagrams render directly on GitHub.
 
 <!--
