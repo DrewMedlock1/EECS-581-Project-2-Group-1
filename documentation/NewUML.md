@@ -200,6 +200,7 @@ the source's sections and explain the responsibilities behind the diagram.
 | Selection screen | `parse_mine_count`, `draw_button`, `draw_option_row`, `drawSelection`, `handle_selection_event`, `start_game` |
 | Board and text rendering | `drawBoard`, `draw_game_status`, `draw_text_centered`, `draw_text_aligned` |
 | Leaderboard and name entry | `keep_top_times`, `times_for_mines`, `load_leaderboard`, `save_leaderboard`, `qualifies_for_leaderboard`, `add_leaderboard_entry`, `handle_win`, `open_leaderboard`, `drawNameEntry`, `handle_name_entry_event`, `drawLeaderboard`, `handle_leaderboard_event` |
+| Controls help box | `open_info`, `close_info`, `info_lines`, `drawInfo`, `handle_info_event` |
 | Legacy bomb helpers | `can_place_bomb`, `get_rand_chance` (not used by the current `set_bombs` placement path) |
 
 <!--
@@ -328,6 +329,8 @@ stateDiagram-v2
 
     Won --> Selection : M / return_to_menu()
     Lost --> Selection : M / return_to_menu()
+    Game --> Info : ? button, I or ? key / open_info()
+    Info --> Game : any key or click / close_info(); same board
     Won --> NameEntry : no AI used and time qualifies
     NameEntry --> Leaderboard : Enter / add_leaderboard_entry(), open_leaderboard()
     NameEntry --> Won : Esc / skip saving

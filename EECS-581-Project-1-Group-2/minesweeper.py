@@ -8,12 +8,13 @@
 # Inputs:
 #     Mouse input to reveal tiles, place/remove flags, and select menu options.
 #     Keyboard input for restart (R), return to menu after a win or loss (M),
-#     leaderboard (L), AI toggle (E), debug
+#     leaderboard (L), controls help (I, ?, or the ? button), AI toggle (E), debug
 #     auto-flag (backquote), menu controls, and leaderboard/name entry controls.
 #     User-selected mine count from 10-20, AI mode, and AI difficulty.
 # Outputs:
 #     Pygame graphical Minesweeper board and UI, including current game status,
 #     remaining mine count, elapsed game time, and AI turn/status information.
+#     Controls help box listing every mouse and keyboard action.
 #     Local leaderboard data persisted to leaderboard.json.
 # Prologue inputs/outputs and documentation organization - Blake Pennel 10/11/2026
 #     - Created with the assistance of OpenAI Codex (GPT-6.1 Sol Light)
@@ -28,6 +29,8 @@
 #           Guarantee 0 mines around first click - Drew Medlock
 #           Added Menu screen to select difficulty and number of mines - Kyler Russell 10/6/2026
 #           Return to the menu with M after a win or loss - Kyler Russell 10/11/2026
+#               - Created with the assistance of Claude (Opus 5.5)
+#           Info button (?) and I / ? keys that open a controls help box - Kyler Russell 10/11/2026
 #               - Created with the assistance of Claude (Opus 5.5)
 #           Added game timer and local leaderboard of fastest win times - Luke Reicherter 10/6/2026
 #               - Created with the assistance of Claude (Opus 5.5)
@@ -762,15 +765,20 @@ def draw_text_centered(text, color, center):
     label = font.render(text, True, color)
     screen.blit(label, label.get_rect(center=center))
 
-def draw_button(rect, text, selected=False, enabled=True):
+def draw_button(rect, text, selected=False, enabled=True, mouse_pos=None):
     """
     Draws a selectable button. Selected buttons are filled dark, and buttons under the mouse are highlighted
+    mouse_pos is the point used for the hover highlight. It defaults to the selection screen's mouse position.
+    (mouse_pos added by Kyler Russell 10/11/2026 so the game screen's ? info button can reuse this button style
+    - created with the assistance of Claude (Opus 5.5))
     """
+    if mouse_pos is None:
+        mouse_pos = selection_mouse_pos
     if not enabled:
         fill, text_color = light_gray, gray
     elif selected:
         fill, text_color = dark_gray, white
-    elif rect.collidepoint(selection_mouse_pos):
+    elif rect.collidepoint(mouse_pos):
         fill, text_color = light_gray, black
     else:
         fill, text_color = gray, black
@@ -1144,6 +1152,111 @@ def handle_leaderboard_event(event):
 
 leaderboard = load_leaderboard()
 
+# ---------------------------------------------------------------------------
+# Controls help box - Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+#
+# A small "?" button in the empty top-left corner of the game screen (or the
+# I or ? key) opens a box listing every mouse and keyboard control, so a new player
+# doesn't need a manual. The box draws over the board like the leaderboard
+# does, and any key or click closes it and returns to the same board.
+# While the box is open the game timer is paused and AI moves are held, so
+# reading the help never costs the player time or a turn.
+#   showing_info      - True while the help box is showing
+#   info_opened_ticks - pygame ticks when the box opened, used to pause the timer
+#   game_mouse_pos    - mouse position on the game screen, for the button highlight
+# ---------------------------------------------------------------------------
+
+INFO_BUTTON_RECT = pygame.Rect(4, 4, 16, 16)    # Corner left of the column labels and above the row labels
+INFO_TEXT_X = 12                                # Left edge of the text in the help box
+
+showing_info = False
+info_opened_ticks = 0
+game_mouse_pos = (0, 0)
+
+def open_info():
+    """
+    Shows the controls help box over the game and remembers when it opened so the timer can be paused
+    """
+    global showing_info, info_opened_ticks
+    showing_info = True
+    info_opened_ticks = pygame.time.get_ticks()
+
+def close_info():
+    """
+    Hides the controls help box and resumes the game where it was left
+    """
+    global showing_info, game_start_ticks
+    showing_info = False
+
+    # Pause the timer: move the start time forward by how long the box was open, only during a running game
+    if game_start_ticks is not None and final_time is None:
+        game_start_ticks += pygame.time.get_ticks() - info_opened_ticks
+
+    # Interactive mode: an AI reply that came due while the box was open was not played, so schedule it again.
+    # Automatic mode needs nothing here because its repeating AI timer is still running.
+    if ai_turn_pending:
+        schedule_ai_turn()
+
+def info_lines():
+    """
+    Returns the help box contents as (text, color) pairs. A pair with empty text is a small gap.
+    Headers are gray and controls are black. The last section describes the current game's AI mode.
+    """
+    lines = [
+        ("Mouse", dark_gray),
+        ("Left click: open a tile", black),
+        ("Right click: flag or unflag", black),
+        ("", None),
+        ("Keys", dark_gray),
+        ("R: restart, same settings", black),
+        ("M: menu (after win or loss)", black),
+        ("L: leaderboard", black),
+        ("E: AI plays on / off", black),
+        ("I or ?: show this help", black),
+        ("", None),
+        ("Goal", dark_gray),
+        ("Open every tile with no mine", black),
+        ("Number = mines touching it", black),
+        ("", None),
+        ("This game", dark_gray),
+    ]
+    if AI_mode == 'interactive':
+        lines.append(("You and the AI take turns", black))
+    elif AI_mode == 'automatic':
+        lines.append(("The AI plays by itself", black))
+    else:
+        lines.append(("You play alone (no AI)", black))
+    if AI_mode != 'manual':
+        lines.append(("AI difficulty: " + AI_DIFFICULTY_LABELS[AI_difficulty], black))
+    return lines
+
+def drawInfo():
+    """
+    Draws the controls help box: a title, the lines from info_lines(), and how to close it
+    """
+    screen.fill(white)
+    pygame.draw.rect(screen, black, pygame.Rect(4, 4, windowWidth - 8, windowHeight - 8), 1)
+    center_x = windowWidth // 2
+
+    draw_text_centered("How to play", black, (center_x, 14))
+
+    y = 30
+    for text, color in info_lines():
+        if not text:
+            y += 5      # Gap between sections
+            continue
+        draw_text_aligned(text, color, (INFO_TEXT_X, y), 'midleft')
+        y += 11
+
+    draw_text_centered("Any key or click = close", dark_gray, (center_x, windowHeight - 15))
+
+def handle_info_event(event):
+    """
+    Any key press or mouse click closes the help box
+    """
+    if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONUP):
+        close_info()
+
 # ----------
 # Main loop
 # ----------
@@ -1185,6 +1298,20 @@ while True:
         clock.tick(60)
         continue
 
+    # Controls help box draws over the game until any key or click closes it
+    # Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+    if showing_info:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            handle_info_event(event)    # AI events are dropped here on purpose; close_info() re-schedules a held turn
+
+        drawInfo()
+        pygame.display.flip()
+        clock.tick(60)
+        continue
+
     # Draw selection box for the AI and number of mines
     if in_selection:
         for event in pygame.event.get():
@@ -1211,6 +1338,7 @@ while True:
         # Keep track of which tile the mouse is currently over
         elif event.type == pygame.MOUSEMOTION:
             mouseTile = getTile(event.pos)
+            game_mouse_pos = event.pos  # For the info button highlight - Kyler Russell 10/11/2026
 
         # Restart with R
         elif event.type == pygame.KEYDOWN:
@@ -1221,6 +1349,10 @@ while True:
             # Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
             elif event.key == pygame.K_m and (game_over or game_won):
                 return_to_menu()
+
+            # Open the controls help box with I or ? - Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+            elif event.key == pygame.K_i or event.unicode == "?":
+                open_info()
 
             # Show the leaderboard with L - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
             elif event.key == pygame.K_l:
@@ -1247,6 +1379,12 @@ while True:
 
         # Check for mouse clicks, run if one is made
         elif event.type == pygame.MOUSEBUTTONUP:
+            # The ? button opens the controls help at any time, even after the game ends or while the AI plays
+            # Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+            if event.button == 1 and INFO_BUTTON_RECT.collidepoint(event.pos):
+                open_info()
+                continue
+
             # Ignore all clicks once the game is lost
             if game_over:
                 continue
@@ -1288,6 +1426,9 @@ while True:
                 schedule_ai_turn()
 
     drawBoard(mouseTile)
+    # "?" info button in the top-left corner - Kyler Russell 10/11/2026 - created with the assistance of Claude (Opus 5.5)
+    # "?" is used because this pixel font draws a lowercase i as a plain bar
+    draw_button(INFO_BUTTON_RECT, "?", mouse_pos=game_mouse_pos)
 
     # Timer under the board: whole seconds while playing, exact time once the game ends
     # Win / loss message moved down a line to make room - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
