@@ -1,5 +1,5 @@
 # Names: Parker Albright, Aidan Atwood, Joseph Wen H Tan, Ever Armenta, Atique Ahanaf Danial, Viren Chowdary Padarthi
-# Project 2 Authors: Drew Medlock
+# Project 2 Authors: Drew Medlock, Kyler Russell, Luke Reicherter, Alex Rawson
 # Course: EECS 581: Software Engineering II
 # Project: Minesweeper
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
@@ -17,6 +17,10 @@
 #               - Created with the assistance of Claude (Opus 5.5)
 #       AI Modes added:
 #           Easy mode - Drew Medlock
+#           Shared move helpers and easy mode fixes - Alex Rawson 10/7/2026
+#           Medium and hard modes (basic rules and the 1-2-1 pattern) - Alex Rawson 10/7/2026
+#           Interactive and automatic AI play started from the menu - Alex Rawson 10/7/2026
+#               - Created with the assistance of Claude (Opus 5.5)
 # Date: 9/19/2026
 
 import pygame
@@ -231,7 +235,7 @@ def elapsed_seconds() -> float:
 
 # Builds a fresh board with new bombs and clears the loss state
 def reset_game():
-    global board, game_over, game_won, bombs_placed, AI_on, game_start_ticks, final_time, ai_used
+    global board, game_over, game_won, bombs_placed, game_start_ticks, final_time, ai_used
     board = [
         [Tile(x, y) for x in range(boardSize)]
         for y in range(boardSize)
@@ -239,12 +243,17 @@ def reset_game():
     game_over = False
     game_won = False
     bombs_placed = False
-    AI_on = False
     # Reset the timer and AI tracking for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
     game_start_ticks = None
     final_time = None
     # Games where the AI made moves are not eligible for the leaderboard
     ai_used = AI_mode != 'manual'
+    # Cancel any AI moves left from the last board, then let the automatic AI start playing the new one.
+    # Doing this here covers both starting from the menu and restarting with R
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    stop_ai_timer()
+    if AI_mode == 'automatic':
+        start_ai_timer()
 
 # Sets tile state to number of bombs surrounding
 # iterates through all tiles around clicked tile
@@ -284,20 +293,88 @@ def is_valid_index(x, y) -> bool:
             
     return True
 
+# ---------------------------------------------------------------------------
+# Shared move helpers
+#
+# The player's mouse clicks and every AI difficulty make their moves through
+# these helpers, so a move follows the same rules (first-click bomb
+# placement, timer, loss, win and leaderboard) no matter who makes it.
+# Before this, the easy bot kept its own copy of the click logic.
+# ---------------------------------------------------------------------------
+
+def neighbors(tile):
+    """
+    Returns the up to 8 tiles touching the given tile, skipping positions off the board
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    result = []
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            nx = tile.x + dx
+            ny = tile.y + dy
+            if (dx, dy) != (0, 0) and is_valid_index(nx, ny):
+                result.append(board[ny][nx])  # The board is stored rows first, so it is board[y][x]
+    return result
+
+def hidden_tiles():
+    """
+    Returns every tile that is still covered and not flagged (state -1)
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    return [tile for row in board for tile in row if tile.state == -1]
+
+def random_hidden_tile():
+    """
+    Picks a random covered, unflagged tile, or returns None if there are none left.
+    Choosing from a list of hidden tiles (instead of rolling random positions until one
+    is hidden) means this always finishes, even when every covered tile is flagged.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    candidates = hidden_tiles()
+    if not candidates:
+        return None
+    return random.choice(candidates)
+
+def open_tile(tile):
+    """
+    Reveals a covered tile for either the player or the AI. The first reveal of a game
+    places the bombs and starts the timer. Revealing a bomb loses the game, and revealing
+    the last safe tile wins it. Flagged, revealed and post-game tiles are ignored.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5), moved here from the mouse
+    click handler (timer / leaderboard calls by Luke Reicherter)
+    """
+    global game_over, game_won, bombs_placed
+    if game_over or game_won or tile.state != -1:
+        return
+
+    if not bombs_placed:
+        set_bombs(board, tile)
+        bombs_placed = True
+        start_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+
+    if tile.has_bomb:
+        tile.state = -3
+        reveal_bombs()
+        game_over = True
+        stop_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    else:
+        reveal_tile(tile)
+        if check_win():
+            flag_bombs()
+            game_won = True
+            handle_win()  # Stops the timer and checks the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+
+def flag_tile(tile):
+    """
+    Places a flag on a covered tile. The AI uses this to mark tiles it has proven are mines.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if tile.state == -1:
+        tile.state = -2
+
 # Draw the board for the user
 
 # Easy bot that will click on not flagged, and not revealed tiles - Drew Medlock
-def toggle_bot():
-    """
-    This toggles a global AI on vs AI off state to set the timer for 1 second AI moves
-    """
-    global AI_on
-    if AI_on:
-        AI_on = False
-        return
-    else:
-        AI_on = True
-
 def set_bot_type(bot_type):
     """
     This sets a global value for the bot type that is currently being used in the AI action
@@ -305,47 +382,205 @@ def set_bot_type(bot_type):
     global AI_type
     AI_type = bot_type
 
+# ---------------------------------------------------------------------------
+# AI turn timing
+#
+# AI moves arrive as AI_event timer events so the player can watch each move
+# instead of the whole game finishing in a single frame.
+#   AI_on           - True while the AI plays on its own (automatic mode or the e key)
+#   ai_turn_pending - True in interactive mode between the player's move and the AI's reply
+# start_ai_timer() / stop_ai_timer() replace the old toggle_bot() on / off switch,
+# since the AI now has to be stopped from several places (game end, restart, e key)
+# where a toggle could turn it back on by mistake.
+# ---------------------------------------------------------------------------
+
+def start_ai_timer():
+    """
+    Makes the AI play one move every AI_MOVE_DELAY_MS until stopped. Used by automatic mode and the e key.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global AI_on
+    AI_on = True
+    pygame.time.set_timer(AI_event, AI_MOVE_DELAY_MS)
+
+def stop_ai_timer():
+    """
+    Stops all AI play, cancels a pending interactive turn, and drops AI events already in the queue so
+    a stale move can't land on a new board.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global AI_on, ai_turn_pending
+    AI_on = False
+    ai_turn_pending = False
+    pygame.time.set_timer(AI_event, 0)
+    pygame.event.clear(AI_event)
+
+def schedule_ai_turn():
+    """
+    Interactive mode: gives the AI a single move AI_MOVE_DELAY_MS after the player's move, so the player
+    can see the result of their own move first. The player's clicks are ignored until the AI has moved.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global ai_turn_pending
+    ai_turn_pending = True
+    pygame.time.set_timer(AI_event, AI_MOVE_DELAY_MS, loops=1)
+
+def handle_ai_event():
+    """
+    Plays one AI move when its timer fires, and stops the timer once the game is won or lost. Events
+    left over after the AI was stopped are ignored.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    global ai_turn_pending
+    if not (AI_on or ai_turn_pending):
+        return
+    ai_turn_pending = False
+    do_AI_action()
+    if game_over or game_won:
+        stop_ai_timer()
+
 def do_AI_action():
     """
-    Dispatcher function based on assigned AI type to correct level of AI
+    Dispatcher function based on assigned AI type to correct level of AI. Each call is one AI turn,
+    and it does nothing once the game has ended.
+    Author: Drew Medlock, medium / hard levels and the game-over check added by Alex Rawson - created
+    with the assistance of Claude (Opus 5.5)
     """
+    if game_over or game_won:
+        return
     if AI_type == 'easy':
         easy_AI_action()
+    elif AI_type == 'medium':
+        medium_AI_action()
+    elif AI_type == 'hard':
+        hard_AI_action()
 
 def easy_AI_action():
     """
-    Randomly chooses a tile to attempt to reveal it, if it is already revealed or is flagged it picks another
+    Randomly chooses a tile to reveal, never picking a tile that is already revealed or is flagged.
+    The old version rolled random positions with board[x][y] (the board is board[y][x]) until it found
+    a covered tile. That looped forever when no covered, unflagged tiles were left (e.g. the player had
+    flagged a safe tile). Picking from the list of hidden tiles avoids both problems.
+    Author: Drew Medlock, rewritten to use the shared move helpers by Alex Rawson - created with the
+    assistance of Claude (Opus 5.5)
     """
-    # Added game_won to the globals and stop on a win so a won game no longer loops forever,
-    # and start / stop the timer - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-    global game_over, game_won, bombs_placed
-    revealed_tile = False
-    while not revealed_tile:
-        if game_over or game_won:
-            break
-        x = random.randint(0, boardSize - 1)
-        y = random.randint(0, boardSize - 1)
-        tile = board[x][y]
-        if tile.state == -1:
-            if not bombs_placed:
-                set_bombs(board, tile)
-                bombs_placed = True
-                start_timer()
-                revealed_tile = True
+    tile = random_hidden_tile()
+    if tile is not None:
+        open_tile(tile)
 
-            if tile.has_bomb:
-                tile.state = -3
-                reveal_bombs()
-                revealed_tile = True
-                game_over = True
-                stop_timer()
-            else:
-                reveal_tile(tile)
-                revealed_tile = True
-                if check_win():
-                    flag_bombs()
-                    game_won = True
-                    stop_timer()
+# Medium AI
+def apply_basic_rules() -> bool:
+    """
+    Looks at each revealed number tile and applies the first of the two basic rules that does something:
+      Rule 1: if the tile's covered neighbors (hidden + flagged) equal its number, every one of them is a
+              mine, so flag the hidden ones. Flagged neighbors are counted as covered so the rule still
+              works after some of the mines around the tile were already flagged.
+      Rule 2: if the tile's flagged neighbors equal its number, all of its mines are found, so open the
+              rest of its hidden neighbors.
+    One rule application is one AI turn, but it may flag or open several tiles at once since both rules
+    act on "all" hidden neighbors. Returns True if a rule was applied, False if neither rule applies.
+    Note: the AI trusts every flag on the board, so in interactive mode a wrong flag placed by the player
+    can make Rule 2 open a mine.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    for row in board:
+        for tile in row:
+            if not 1 <= tile.state <= 8:
+                continue
+
+            around = neighbors(tile)
+            hidden = [n for n in around if n.state == -1]
+            if not hidden:
+                continue    # Nothing left to do around this tile
+            flagged = sum(1 for n in around if n.state == -2)
+
+            # Rule 1: every covered neighbor must be a mine
+            if len(hidden) + flagged == tile.state:
+                for n in hidden:
+                    flag_tile(n)
+                return True
+
+            # Rule 2: all mines around this tile are flagged, so the other neighbors are safe
+            if flagged == tile.state:
+                for n in hidden:
+                    open_tile(n)    # open_tile ignores the rest if one of these ends the game
+                return True
+    return False
+
+def medium_AI_action():
+    """
+    Applies one of the basic rules if possible, otherwise reveals a random hidden tile like the easy AI
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if not apply_basic_rules():
+        easy_AI_action()
+
+# Hard AI
+def apply_121_rule() -> bool:
+    """
+    Looks for three side-by-side revealed tiles (in a row or a column) that read 1-2-1. When every
+    covered neighbor of those three tiles lies in the single line of tiles along one side of them, the
+    two outer tiles of that line are mines (flag them) and the middle one is safe (open it).
+
+    Why the "one side" check is needed: call the five tiles of the side line a, b, c, d, e, where
+    b, c, d sit next to the 1, 2, 1. If those are the only covered tiles the three numbers can see,
+    then a+b+c = 1, b+c+d = 2 and c+d+e = 1 (a revealed or off-board tile counts as 0). The first
+    equation gives b+c <= 1, so d = 1 to reach 2. The last equation then forces c = 0 and e = 0, and by
+    symmetry b = 1 and a = 0. If covered tiles were also on the other side (or beside the ends), the
+    numbers could be satisfied by those tiles instead and the deduction would not hold, so the
+    pattern is skipped there.
+
+    Flags already in the side line are trusted, like in the basic rules. A pattern only counts if it
+    still has an outer tile to flag or a middle tile to open. Returns True if the rule was applied.
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    for row in board:
+        for middle in row:
+            if middle.state != 2:
+                continue
+
+            # (ax, ay) steps along the pattern: (1, 0) checks a row, (0, 1) checks a column.
+            # (px, py) steps across it, toward the side line.
+            for ax, ay in ((1, 0), (0, 1)):
+                px, py = ay, ax
+                if not (is_valid_index(middle.x - ax, middle.y - ay) and is_valid_index(middle.x + ax, middle.y + ay)):
+                    continue
+                first = board[middle.y - ay][middle.x - ax]
+                last = board[middle.y + ay][middle.x + ax]
+                if first.state != 1 or last.state != 1:
+                    continue
+
+                # Every hidden or flagged tile that touches any of the three numbers
+                covered = {n for t in (first, middle, last) for n in neighbors(t) if n.state in (-1, -2)}
+                if not covered:
+                    continue
+
+                for side in (-1, 1):
+                    # Distance of a tile from the pattern, measured across it (-1 or 1 is the side line)
+                    if not all((n.x - middle.x) * px + (n.y - middle.y) * py == side for n in covered):
+                        continue
+
+                    # The side line is on the board here, since the covered tiles are in it
+                    outer = [board[t.y + py * side][t.x + px * side] for t in (first, last)]
+                    inner = board[middle.y + py * side][middle.x + px * side]
+                    to_flag = [t for t in outer if t.state == -1]
+                    if not to_flag and inner.state != -1:
+                        continue    # Pattern already solved
+
+                    for t in to_flag:
+                        flag_tile(t)
+                    open_tile(inner)    # Ignored if the middle tile is flagged or already revealed
+                    return True
+    return False
+
+def hard_AI_action():
+    """
+    Applies the basic rules first, then the 1-2-1 pattern, and only reveals a random hidden tile
+    when neither finds a move
+    Author: Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    """
+    if not apply_basic_rules() and not apply_121_rule():
+        easy_AI_action()
 
 def drawBoard(mouseTile):
     screen.fill(white)
@@ -415,7 +650,8 @@ def drawBoard(mouseTile):
 #   AI_mode          - 'manual', 'interactive', or 'automatic'
 #   AI_difficulty    - 'easy', 'medium', or 'hard' ('' when AI_mode is 'manual')
 #   AI_type          - same as AI_difficulty, read by do_AI_action()
-# The AI behavior for each mode/difficulty still needs to be implemented.
+# reset_game() starts automatic play, and the main loop gives the AI a turn
+# after each player move in interactive mode (see "AI turn timing").
 # Used Opus 5.5 to code this, given the instructions to Complete the sections 
 # in the code which describe adding the selection for the AI and number of mines. 
 # the code was then tested by Kyler Russell.
@@ -630,11 +866,9 @@ def start_game():
     set_bot_type(AI_difficulty)
 
     # reset_game() moved after the AI settings so it knows whether the AI is playing - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+    # This also starts the AI in automatic mode. Interactive mode waits for the player's first move
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
     reset_game()
-
-    # TODO: Start the chosen AI here once it is implemented, e.g.
-    #   'interactive' - let the AI take a move after each player move
-    #   'automatic'   - toggle_bot() and pygame.time.set_timer(AI_event, 1000)
 
     in_selection = False
     print("Starting game with", max_num_of_bombs, "mines, AI mode:", AI_mode, "AI difficulty:", AI_difficulty)
@@ -868,6 +1102,9 @@ AI_type = ''
 game_start_ticks = None
 final_time = None
 ai_used = False
+# AI turn state, see "AI turn timing" - Alex Rawson - created with the assistance of Claude (Opus 5.5)
+ai_turn_pending = False
+AI_MOVE_DELAY_MS = 1000     # Time between AI moves, the same 1 second the e key bot already used
 
 AI_event = pygame.USEREVENT + 1
 
@@ -913,7 +1150,7 @@ while True:
             pygame.quit()
             sys.exit()
         if event.type == AI_event:
-            do_AI_action()
+            handle_ai_event()  # Alex Rawson - created with the assistance of Claude (Opus 5.5)
 
         # Keep track of which tile the mouse is currently over
         elif event.type == pygame.MOUSEMOTION:
@@ -938,18 +1175,24 @@ while True:
             elif event.key == pygame.K_e:
                 # Pressing 'e' toggles the easy mode bot on and off
                 ai_used = True  # Bot-assisted games don't count for the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+                # Now uses the difficulty chosen in the menu, or easy when no AI was chosen
+                # Alex Rawson - created with the assistance of Claude (Opus 5.5)
                 if AI_on:
-                    toggle_bot()
-                    pygame.time.set_timer(AI_event, 0)
+                    stop_ai_timer()
                 else:
-                    toggle_bot()
-                    set_bot_type('easy')
-                    pygame.time.set_timer(AI_event, 1000)
+                    if AI_type == '':
+                        set_bot_type('easy')
+                    start_ai_timer()
 
         # Check for mouse clicks, run if one is made
         elif event.type == pygame.MOUSEBUTTONUP:
             # Ignore all clicks once the game is lost
             if game_over:
+                continue
+
+            # The board belongs to the AI in automatic mode, and during the AI's turn in interactive mode
+            # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+            if AI_mode == 'automatic' or ai_turn_pending:
                 continue
 
             tile = getTile(event.pos)
@@ -958,34 +1201,30 @@ while True:
             if tile is None:
                 continue
 
+            player_moved = False    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+
             # A left click on a covered tile reveals what's under it
+            # Uses the shared open_tile() helper - Alex Rawson - created with the assistance of Claude (Opus 5.5)
             if event.button == 1:
                 if tile.state == -1:
-                    if not bombs_placed:
-                        set_bombs(board, tile)
-                        bombs_placed = True
-                        start_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-
-                    if tile.has_bomb:
-                        tile.state = -3
-                        reveal_bombs()
-                        game_over = True
-                        stop_timer()  # Luke Reicherter - created with the assistance of Claude (Opus 5.5)
-                    else:
-                        reveal_tile(tile)
-
-                        if check_win():
-                            flag_bombs()
-                            game_won = True
-                            handle_win()  # Stops the timer and checks the leaderboard - Luke Reicherter - created with the assistance of Claude (Opus 5.5)
+                    open_tile(tile)
+                    player_moved = True
 
             # A right click adds or removes a flag
             elif event.button == 3:
                 if tile.state == -1:
                     tile.state = -2
+                    player_moved = True
 
                 elif tile.state == -2:
                     tile.state = -1
+                    player_moved = True
+
+            # Interactive mode: any move that changed the board (a reveal, or placing or removing a flag)
+            # ends the player's turn, and the AI answers with one move
+            # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+            if player_moved and AI_mode == 'interactive' and not (game_over or game_won):
+                schedule_ai_turn()
 
     drawBoard(mouseTile)
 
@@ -1007,5 +1246,14 @@ while True:
             msg,
             msg.get_rect(center=(windowWidth // 2, boardY + boardHeight + 21))
         )
+
+    # While an AI game is in progress, say whose turn it is in the message line
+    # Alex Rawson - created with the assistance of Claude (Opus 5.5)
+    elif AI_mode == 'interactive':
+        draw_text_centered("AI's turn..." if ai_turn_pending else "Your turn", dark_gray,
+                           (windowWidth // 2, boardY + boardHeight + 21))
+    elif AI_mode == 'automatic':
+        draw_text_centered("AI playing (" + AI_DIFFICULTY_LABELS[AI_difficulty] + ")", dark_gray,
+                           (windowWidth // 2, boardY + boardHeight + 21))
     pygame.display.flip()
     clock.tick(60)
