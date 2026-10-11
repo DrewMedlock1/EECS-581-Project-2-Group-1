@@ -5,6 +5,17 @@
 # Description: This program creates a 10 x 10 board and randomly populates the spaces with bombs. The goal
 #              is to clear all safe spaces without tripping a bomb. A space will become blank on click or
 #              show a number indicating how many bombs are touching the space.
+# Inputs:
+#     Mouse input to reveal tiles, place/remove flags, and select menu options.
+#     Keyboard input for restart (R), leaderboard (L), AI toggle (E), debug
+#     auto-flag (backquote), menu controls, and leaderboard/name entry controls.
+#     User-selected mine count from 10-20, AI mode, and AI difficulty.
+# Outputs:
+#     Pygame graphical Minesweeper board and UI, including current game status,
+#     remaining mine count, elapsed game time, and AI turn/status information.
+#     Local leaderboard data persisted to leaderboard.json.
+# Prologue inputs/outputs and documentation organization - Blake Pennel 10/11/2026
+#     - Created with the assistance of OpenAI Codex (GPT-6.1 Sol Light)
 # Changes made to Original:
 #       Fixes:
 #
