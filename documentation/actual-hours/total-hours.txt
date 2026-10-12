@@ -1,0 +1,13 @@
+Hours Breakdown:
+    Meetings: 21.75
+    Development: 5.5
+    Testing: 1.5
+    Documentation: 2
+
+Total Hours: 30.75 hours
+
+Our total hours was 30.75 vs our predicted of 27.25 hours. This is off by around 11%, so not completely inaccurate, but
+still over the estimated hours. This is likely because the estimation of hours focused on the cost of adding new features
+and making fixes to the codebase, but neglected to estimate time for documentation and testing. If those categories were
+estimated the total would likely be closer. Overall 11% isn't too large of an error, especially when projects are prone
+to going grossly over time and cost in the real world, by much more than 11%.
