@@ -43,6 +43,7 @@ flowchart TD
     Scores["Leaderboard and name entry<br/>eligibility, ranking and persistence"]
     Rendering["Pygame rendering<br/>board, menu, timer, status and rankings"]
     Assets["assets/<br/>font and tile images"]
+    Help["Controls help box<br/>open_info, close_info, drawInfo"]
     Disk[("leaderboard.json<br/>name, time and mines")]
 
     Player -->|mouse and keyboard input| Events
@@ -64,6 +65,11 @@ flowchart TD
     Scores -->|name prompt and ranked entries| Rendering
     Menu -->|selection values and controls| Rendering
     Assets -->|font and images| Rendering
+    Events -->|M after a win or loss: return_to_menu| Menu
+    Events -->|? button, I or ? key| Help
+    Help -->|pauses timer while open| Timer
+    Help -->|re-schedules a held AI turn| AI
+    Help -->|control list for this game| Rendering
     Rendering -->|graphical display| Player
 ```
 
@@ -114,13 +120,17 @@ classDiagram
         in_selection : bool
         entering_name : bool
         showing_leaderboard : bool
+        showing_info : bool
         start_game()
+        return_to_menu()
         reset_game()
         open_tile(tile)
         flag_tile(tile)
         handle_ai_event()
         do_AI_action()
         handle_win()
+        open_info()
+        close_info()
         drawBoard(mouseTile)
         draw_game_status()
     }
@@ -313,6 +323,7 @@ Restart resets timing but keeps the stored leaderboard.
 
 ```mermaid
 stateDiagram-v2
+    state "Controls help box" as Info
     [*] --> Selection : initialize Pygame, assets, board and leaderboard
     Selection --> Game : start_game() / valid mine count and selected AI settings
 
@@ -329,18 +340,18 @@ stateDiagram-v2
 
     Won --> Selection : M / return_to_menu()
     Lost --> Selection : M / return_to_menu()
-    Game --> Info : ? button, I or ? key / open_info()
-    Info --> Game : any key or click / close_info(); same board
     Won --> NameEntry : no AI used and time qualifies
     NameEntry --> Leaderboard : Enter / add_leaderboard_entry(), open_leaderboard()
     NameEntry --> Won : Esc / skip saving
     Selection --> Leaderboard : leaderboard button
     Game --> Leaderboard : L / open_leaderboard()
     Leaderboard --> Leaderboard : Left or Right / change mine count
+    Game --> Info : ? button, I or ? key / open_info()
+    Info --> Game : any key or click / close_info(), same board
     Leaderboard --> ReturnScreen : other key or mouse click / close overlay
     state ReturnScreen <<choice>>
     ReturnScreen --> Selection : in_selection
-    ReturnScreen --> Game : game screen underneath; keep existing board and flags
+    ReturnScreen --> Game : game screen underneath, keep existing board and flags
 ```
 
 The main loop processes name entry or leaderboard events before selection and game
